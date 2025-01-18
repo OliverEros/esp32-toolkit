@@ -18,6 +18,7 @@
 #include "esp_event.h"
 #include "nvs_flash.h"
 #include "regex.h"
+#include "string.h"
 
 //Custom headers
 #include "cli.h"
@@ -26,6 +27,15 @@
 #define DEFAULT_SCAN_LIST_SIZE CONFIG_EXAMPLE_SCAN_LIST_SIZE
 
  const char *TAG = "ESP32";
+
+ //Structure of payload.
+// static struct FormattedPayload {
+//     uint8_t FrameControl[2];
+//     uint8_t Duration[2];
+//     uint8_t RA[6];
+//     uint8_t TA[6];
+//     uint8_t SeqCtl[2];
+// } PayLoad;
 
 static struct Scanner
 {
@@ -44,14 +54,11 @@ static void configure_wifi_settings(void){
 }
 
 static void print_wifi_config(){
-
+    
     ESP_LOGI(TAG, "============= WIFI CONFIG ==================");
     ESP_LOGI(TAG, "scanner.maScannedAP: %d", scanner.maxScannedAP);
     ESP_LOGI(TAG, "scanner.Clients [SIZE]: %d \n\n", sizeof(scanner.Clients));
-
 }
-
-
 
 
 static void print_auth_mode(int authmode)
@@ -189,10 +196,11 @@ void print_scanned_AP(void){
             uint8_t *MAC = ap.bssid;  // This is a MAC address (uint8_t array)
             uint8_t primary_channel = ap.primary;
             uint8_t signalStrength = ap.rssi;
-            
+           
         
-            ESP_LOGI(TAG,"[*] AP[%d]", i);
+            ESP_LOGI(TAG, "[*] AP ID: %d", i);
             ESP_LOGI(TAG, "[*] Name: %s", SSID);
+            ESP_LOGI(TAG, "[*] MAC: %02X:%02X:%02X:%02X:%02X:%02X", MAC[0], MAC[1], MAC[2], MAC[3], MAC[4], MAC[5]);
             print_auth_mode(authMode);
             ESP_LOGI(TAG,"[*] Signal Strength: %d", signalStrength);
             ESP_LOGI(TAG, "\n\n");
@@ -204,6 +212,110 @@ void print_scanned_AP(void){
         ESP_LOGI(TAG, "[*] No scanned networks available.");
     }
 }
+
+wifi_ap_record_t get_AP(uint8_t index){
+
+   wifi_ap_record_t rec = {0};
+
+   if(index < scanner.maxScannedAP || index > 0)
+   {
+        return scanner.Clients[index];
+   }
+    
+    return rec;
+}
+
+uint8_t get_esp_mac_address()
+{
+    uint8_t MAC[6];
+    uint8_t toReturn;
+
+    ESP_ERROR_CHECK(esp_wifi_get_mac(WIFI_MODE_STA, MAC));
+
+    toReturn = *MAC;
+    return toReturn;
+}
+//#FIXME - 
+// char format_mac_address(uint8_t *MAC_address)
+// {
+//     char *format = "%02X:%02X:%02X:%02X:%02X:%02X";
+//     char *formattedMAC = "";
+
+//     snprintf(formattedMAC, 18, format, MAC_address[0], MAC_address[1], MAC_address[2], MAC_address[3], MAC_address[4], MAC_address[5]);
+
+//     return *formattedMAC;
+// }
+
+uint8_t get_target_mac_address(uint8_t targetID)
+{
+    wifi_ap_record_t TargetMac = get_AP(targetID);
+
+    uint8_t *MAC;
+
+    MAC = TargetMac.bssid;
+
+    ESP_LOGI(TAG,"MAC of target with ID [%d]: %02X:%02X:%02X:%02X:%02X:%02X", targetID, MAC[0], MAC[1], MAC[2], MAC[3], MAC[4], MAC[5]);
+
+    return *MAC;
+}
+
+
+static void promiscCallBack(void *buff, wifi_promiscuous_pkt_type_t type)
+{
+    //Packet coming in.
+    wifi_promiscuous_pkt_t* packet = (wifi_promiscuous_pkt_t*) buff;
+    
+    //Extract header + payload.
+    wifi_pkt_rx_ctrl_t header = packet->rx_ctrl;
+    uint8_t rawPayload = *packet->payload;
+
+    uint8_t *srcMAC   = &rawPayload + 6;
+    //uint8_t *dest_mac = $rawPayload;
+
+   ESP_LOGI("promiscCallBack", "Source: %02X:%02X:%02X:%02X:%02X:%02X  -- Destination:", srcMAC[0], srcMAC[1], srcMAC[2], srcMAC[3], srcMAC[4], srcMAC[5]);
+    
+    switch (type)
+    {
+        case WIFI_PKT_MGMT:
+            // Process management frames
+            ESP_LOGI("promiscCallBack", "Received Management Frame");
+            
+            //Get MAC address - capture both 'from' and 'to'. 
+            // 0000	- Association request
+            break;
+
+        case WIFI_PKT_CTRL:
+            // Process control frames
+            ESP_LOGI("promiscCallBack", "Received Control Frame");
+
+            break;
+
+        case WIFI_PKT_DATA:
+            // Process data frames
+            ESP_LOGI("promiscCallBack", "Received Data Frame");
+            break;
+
+        case WIFI_PKT_MISC:
+            // Process miscellaneous frames
+            ESP_LOGI("promiscCallBack", "Received Miscellaneous Frame");
+            break;     
+
+        default:
+            ESP_LOGI("promiscCallBack", "Unknown Frame Type");
+            break;
+    }
+}
+//Turns on promiscuous mode.
+void PromiscOn()
+{
+    ESP_ERROR_CHECK(esp_wifi_set_promiscuous(true));
+    ESP_ERROR_CHECK(esp_wifi_set_promiscuous_rx_cb(promiscCallBack));
+    ESP_LOGI(TAG, "promiscuous mode: ON!");
+}
+
+
+
+
 
 /* Initialize Wi-Fi as sta and set scan method */
 void wifi_scan(void)
@@ -241,17 +353,7 @@ void wifi_scan(void)
 }
 
 
-wifi_ap_record_t* get_AP(uint8_t index){
 
-   if(index > scanner.maxScannedAP || index <= 0)
-   {
-        ESP_LOGI(TAG, "[*] Incorrect ID.");
-        return NULL;
-   }
-   
-    return &scanner.Clients[index];
-
-}
 
 static void send_packets(uint8_t *packet, size_t packetLen)
 {
@@ -278,11 +380,6 @@ void deauth(uint8_t source_mac, uint8_t destination_mac){
 }
 
 
-//Turns on promiscious mode.
-static void PromiscOn()
-{
-    ESP_ERROR_CHECK(esp_wifi_set_promiscuous(true));
-}
 
 
 
@@ -305,7 +402,6 @@ void initialise_wifi(void)
     ESP_ERROR_CHECK(esp_wifi_set_mode(WIFI_MODE_STA));
     ESP_ERROR_CHECK(esp_wifi_start());
 
-    PromiscOn();
 
     ESP_LOGI(TAG, "[*] WiFi has been initialised\n");
 
