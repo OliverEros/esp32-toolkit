@@ -36,7 +36,7 @@ int scan_wifi_networks(int argc, char **argv);
  * @param argv Array of arguments.
  * @return int Return 0 on success, otherwise an error code.
  */
-int deauthenticate_wifi_network(int argc, char **argv);
+int deauthenticate_AP(int argc, char **argv);
 
 /**
  * @brief Register custom commands for the CLI.
