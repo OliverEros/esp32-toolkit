@@ -8,25 +8,7 @@
 #include "wifi.h";
 
 
-// Tag for logging
-static const char *TAG = "CLI";
 
-
-struct cli
-{
-    /* data */
-};
-
-// Example command callback
-static int scan_wifi_networks(int argc, char **argv) {
-    wifi_scan();
-   return 0;
-}
-
-static int deauthenticate_wifi_network(int argc, char **argv) {
-   deauth();
-   return 0;
-}
 
 #define ESP_CONSOLE_CONFIG_DEFAULT()           \
 {                                          \
@@ -36,6 +18,43 @@ static int deauthenticate_wifi_network(int argc, char **argv) {
     .hint_color = 39,                      \
     .hint_bold = 0                         \
 }
+
+
+
+
+//Scans for WiFi networks.
+static int scan_wifi_networks(int argc, char **argv) {
+
+    wifi_scan();
+   return 0;
+}
+
+//Deauthenticas a scanned AP - accepts the scan ID as parameter.
+static int deauthenticate_AP(int argc, char **argv) {
+   deauth();
+   return 0;
+}
+
+//Lists the last scanned networks.
+static int list_scanned_aps(){
+    print_scanned_AP();
+    return 0;
+}
+
+//Gets a scanned AP's MAC address - accepts the scan ID as parameter.
+static int get_target_mac(int argc, char **argv){
+    get_target_mac_address(0);
+    return 0;
+}
+
+//Enables promiscios mode
+//FIXME - need to be able to interrupt, otherwise prints on the screen forever.
+static int promisc_on(){
+    PromiscOn();
+    return 0;
+}
+
+
 
  static const esp_console_cmd_t commands[] = 
  { 
@@ -47,13 +66,13 @@ static int deauthenticate_wifi_network(int argc, char **argv) {
         .func = &scan_wifi_networks,
     },
 
-    // {
-    //     .command = "wl",
-    //     .help = "Returns information for previously scanned networks.",
-    //     .hint = NULL,
-    //     .func = NULL //TODO - Implement function.
+    {
+        .command = "wl",
+        .help = "Returns scanned APs.",
+        .hint = NULL,
+        .func = &list_scanned_aps //TODO - Implement function.
 
-    // },
+    },
 
     // {
     //     .command = "wc", //NOTE - How about wc4? For more attack types.
@@ -64,31 +83,39 @@ static int deauthenticate_wifi_network(int argc, char **argv) {
     // },
 
     {
-        .command = "w-deauth",
+        .command = "wdeauth",
         .help = "Send deauthenticates packets to a selected WiFi network. ",
         .hint = NULL,
-        .func = &deauthenticate_wifi_network,
+        .func = &deauthenticate_AP,
+    },
+
+    {
+        .command = "wmac",
+        .help = "Gets MAC address of target.",
+        .hint = NULL,
+        .func = &get_target_mac,
+    },
+
+    {   
+        .command = "wpromisc",
+        .help = "Initiates promiscious mode.",
+        .hint = NULL,
+        .func = &promisc_on,
     }
+
       
 };
 
 
 
-// Command registration
+// Automated command registration
 void register_commands(void) {
 
-    // esp_console_cmd_t *ptr;
-
-    // for(ptr = commands; ptr < commands + sizeof(commands); ++ptr) 
-    // {
-    //     ESP_ERROR_CHECK(esp_console_cmd_register(ptr));
-    // };
-
-    ESP_ERROR_CHECK(esp_console_cmd_register(&commands[0]));
-    ESP_ERROR_CHECK(esp_console_cmd_register(&commands[1]));
+    for(uint8_t i = 0; i < sizeof(commands) / sizeof(commands[0]); i++){
+        ESP_ERROR_CHECK(esp_console_cmd_register(&commands[i]));
+    }
 }
 
-// Initialize consoleESP_ERROR_CHECK failed: esp_err_t 0x103 (ESP_ERR_INVALID_STATE) at 0x400d765d
 
 void initialize_console(void) {
     esp_console_repl_t *repl = NULL;
